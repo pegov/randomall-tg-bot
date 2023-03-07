@@ -1,0 +1,9 @@
+#!/bin/sh
+export PREFIX="poetry run"
+export SOURCE_FILES="randomall_tg_bot"
+
+set -x
+
+${PREFIX} autoflake --remove-all-unused-imports --in-place --recursive $SOURCE_FILES --exclude=__init__.py
+${PREFIX} isort $SOURCE_FILES
+${PREFIX} black $SOURCE_FILES

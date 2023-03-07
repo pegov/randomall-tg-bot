@@ -1,0 +1,2 @@
+#!/bin/sh
+PYTHONPATH=./ poetry run python randomall_tg_bot/main.py

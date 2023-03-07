@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "randomall-tg-bot"
+version = "0.1.0"
+description = ""
+authors = ["pegov"]
+readme = "README.md"
+packages = [{include = "randomall_tg_bot"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+aio-pika = "^9.0.4"
+aiogram = "^2.25.1"
+python-dotenv = "^1.0.0"
+orjson = "^3.8.7"
+
+
+[tool.poetry.group.dev.dependencies]
+flake8 = "^6.0.0"
+pytest = "^7.2.1"
+isort = "^5.12.0"
+autoflake = "^2.0.1"
+black = "^23.1.0"
+mypy = "^1.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
