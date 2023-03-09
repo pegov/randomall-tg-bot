@@ -20,10 +20,14 @@ from randomall_tg_bot.router import Router
 
 async def on_startup(dp: Dispatcher) -> None:
     logging.debug("Startup")
+    if not DEBUG:
+        await dp.bot.set_webhook(TELEGRAM_WEBHOOK_URL)
 
 
 async def on_shutdown(dp: Dispatcher) -> None:
     logging.debug("Shutdown")
+    if not DEBUG:
+        await dp.bot.delete_webhook()
 
 
 def start_bot(
