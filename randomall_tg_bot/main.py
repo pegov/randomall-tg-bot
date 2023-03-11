@@ -67,9 +67,13 @@ def start_service(loop: AbstractEventLoop):
 
     router = Router(bot, mq, uuids_map)
     dp.register_message_handler(router.help, commands=["start", "help"])
-    dp.register_message_handler(router.general, commands=[COMMAND_GENERAL, "g"])
-    dp.register_message_handler(router.custom, commands=[COMMAND_CUSTOM, "c"])
-    dp.register_callback_query_handler(router.callback)
+    dp.register_message_handler(
+        dp.async_task(router.general), commands=[COMMAND_GENERAL, "g"]
+    )
+    dp.register_message_handler(
+        dp.async_task(router.custom), commands=[COMMAND_CUSTOM, "c"]
+    )
+    dp.register_callback_query_handler(dp.async_task(router.callback))
 
     # TODO: handle reconnect
     loop.create_task(mq.recv())
