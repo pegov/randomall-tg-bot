@@ -7,8 +7,10 @@ from aiogram.webhook.aiohttp_server import (
     SimpleRequestHandler,
     setup_application,
 )
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from aiohttp import web
+from aiohttp.web_app import Application
 
 from randomall_tg_bot.config import (
     DEBUG,
@@ -16,6 +18,7 @@ from randomall_tg_bot.config import (
     TELEGRAM_API_TOKEN,
     TELEGRAM_WEBAPP_HOST,
     TELEGRAM_WEBAPP_PORT,
+    TELEGRAM_WEBHOOK_HOST,
     TELEGRAM_WEBHOOK_PATH,
     TELEGRAM_WEBHOOK_URL,
 )
@@ -24,13 +27,13 @@ from randomall_tg_bot.mq import create_mq
 from randomall_tg_bot.router import Router
 
 
-async def on_startup(dp: Dispatcher, bot: Bot) -> None:
+async def on_startup(bot: Bot) -> None:
     logging.debug("Startup")
     if not DEBUG:
         await bot.set_webhook(TELEGRAM_WEBHOOK_URL)
 
 
-async def on_shutdown(dp: Dispatcher, bot: Bot) -> None:
+async def on_shutdown(bot: Bot) -> None:
     logging.debug("Shutdown")
     if not DEBUG:
         await bot.delete_webhook()
@@ -64,13 +67,14 @@ async def on_shutdown(dp: Dispatcher, bot: Bot) -> None:
 
 def start_service(loop: AbstractEventLoop):
     level = logging.DEBUG if DEBUG else logging.INFO
-    logging.basicConfig(level=level)
+    logging.basicConfig(level=logging.DEBUG)
     uuids_map: dict[str, Future[Response]] = {}
     mq = loop.run_until_complete(create_mq(loop, MQ_URL, uuids_map))
     loop.create_task(mq.recv())
 
-    dp = Dispatcher()
     bot = Bot(TELEGRAM_API_TOKEN, parse_mode="MarkdownV2")
+    dp = Dispatcher()
+    dp["base_url"] = TELEGRAM_WEBHOOK_HOST
 
     router = Router(bot, mq, uuids_map)
     aiogram_router = AiogramRouter()
@@ -78,11 +82,13 @@ def start_service(loop: AbstractEventLoop):
     dp.include_router(aiogram_router)
     dp.startup.register(on_startup)
 
-    app = web.Application()
+    app = Application()
+    app["bot"] = bot
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(
         app, path=TELEGRAM_WEBHOOK_PATH
     )
     setup_application(app, dp, bot=bot)
+
     web.run_app(
         app, host=TELEGRAM_WEBAPP_HOST, port=int(TELEGRAM_WEBAPP_PORT), loop=loop
     )
