@@ -9,10 +9,10 @@ packages = [{include = "randomall_tg_bot"}]
 [tool.poetry.dependencies]
 python = "^3.10"
 aio-pika = "^9.0.4"
-aiogram = { version = "3.0.0b7", allow-prereleases = true }
 python-dotenv = "^1.0.0"
 orjson = "^3.8.7"
 aiohttp = "^3.8.4"
+python-telegram-bot = {extras = ["ext"], version = "^20.1"}
 
 
 [tool.poetry.group.dev.dependencies]
