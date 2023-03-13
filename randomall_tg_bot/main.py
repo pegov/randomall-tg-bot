@@ -1,9 +1,14 @@
 import logging
 from asyncio import AbstractEventLoop, Future, get_event_loop
 
-from aiogram import Bot, Dispatcher
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
-from aiogram.utils.executor import start_polling, start_webhook
+from aiogram import Bot, Dispatcher, Router as AiogramRouter, types
+from aiogram.filters import Command
+from aiogram.webhook.aiohttp_server import (
+    SimpleRequestHandler,
+    setup_application,
+)
+
+from aiohttp import web
 
 from randomall_tg_bot.config import (
     DEBUG,
@@ -19,41 +24,42 @@ from randomall_tg_bot.mq import create_mq
 from randomall_tg_bot.router import Router
 
 
-async def on_startup(dp: Dispatcher) -> None:
+async def on_startup(dp: Dispatcher, bot: Bot) -> None:
     logging.debug("Startup")
     if not DEBUG:
-        await dp.bot.set_webhook(TELEGRAM_WEBHOOK_URL)
+        await bot.set_webhook(TELEGRAM_WEBHOOK_URL)
 
 
-async def on_shutdown(dp: Dispatcher) -> None:
+async def on_shutdown(dp: Dispatcher, bot: Bot) -> None:
     logging.debug("Shutdown")
     if not DEBUG:
-        await dp.bot.delete_webhook()
+        await bot.delete_webhook()
 
 
-def start_bot(
-    loop: AbstractEventLoop,
-    dp: Dispatcher,
-) -> None:
-    if DEBUG:
-        start_polling(
-            dp,
-            loop=loop,
-            on_startup=on_startup,
-            on_shutdown=on_shutdown,
-            skip_updates=True,
-        )
-    else:
-        start_webhook(
-            dp,
-            loop=loop,
-            webhook_path=TELEGRAM_WEBHOOK_PATH,
-            on_startup=on_startup,
-            on_shutdown=on_shutdown,
-            skip_updates=True,
-            host=TELEGRAM_WEBAPP_HOST,
-            port=TELEGRAM_WEBAPP_PORT,
-        )
+# def start_bot(
+#     loop: AbstractEventLoop,
+#     dp: Dispatcher,
+#     bot: Bot,
+# ) -> None:
+#     if DEBUG:
+#         start_polling(
+#             dp,
+#             loop=loop,
+#             on_startup=on_startup,
+#             on_shutdown=on_shutdown,
+#             skip_updates=True,
+#         )
+#     else:
+#         start_webhook(
+#             dp,
+#             loop=loop,
+#             webhook_path=TELEGRAM_WEBHOOK_PATH,
+#             on_startup=on_startup,
+#             on_shutdown=on_shutdown,
+#             skip_updates=True,
+#             host=TELEGRAM_WEBAPP_HOST,
+#             port=TELEGRAM_WEBAPP_PORT,
+#         )
 
 
 def start_service(loop: AbstractEventLoop):
@@ -61,25 +67,37 @@ def start_service(loop: AbstractEventLoop):
     logging.basicConfig(level=level)
     uuids_map: dict[str, Future[Response]] = {}
     mq = loop.run_until_complete(create_mq(loop, MQ_URL, uuids_map))
-    bot = Bot(TELEGRAM_API_TOKEN, parse_mode="MarkdownV2")
-    dp = Dispatcher(bot)
-    if DEBUG:
-        dp.middleware.setup(LoggingMiddleware())
-
-    router = Router(bot, mq, uuids_map)
-    dp.register_message_handler(router.help, commands=["start", "help"])
-    dp.register_message_handler(
-        dp.async_task(router.general), commands=[COMMAND_GENERAL, "g"]
-    )
-    dp.register_message_handler(
-        dp.async_task(router.custom), commands=[COMMAND_CUSTOM, "c"]
-    )
-    dp.register_callback_query_handler(dp.async_task(router.callback))
-
-    # TODO: handle reconnect
     loop.create_task(mq.recv())
 
-    start_bot(loop, dp)
+    dp = Dispatcher()
+    bot = Bot(TELEGRAM_API_TOKEN, parse_mode="MarkdownV2")
+
+    router = Router(bot, mq, uuids_map)
+    aiogram_router = AiogramRouter()
+    aiogram_router.message(router.help, Command(commands=["start", "help"]))
+    dp.include_router(aiogram_router)
+    dp.startup.register(on_startup)
+
+    app = web.Application()
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(
+        app, path=TELEGRAM_WEBHOOK_PATH
+    )
+    setup_application(app, dp, bot=bot)
+    web.run_app(
+        app, host=TELEGRAM_WEBAPP_HOST, port=int(TELEGRAM_WEBAPP_PORT), loop=loop
+    )
+    # dp.register_message_handler(router.help, commands=["start", "help"])
+    # dp.register_message_handler(
+    #     dp.async_task(router.general), commands=[COMMAND_GENERAL, "g"]
+    # )
+    # dp.register_message_handler(
+    #     dp.async_task(router.custom), commands=[COMMAND_CUSTOM, "c"]
+    # )
+    # dp.register_callback_query_handler(dp.async_task(router.callback))
+
+    # TODO: handle reconnect
+
+    # start_bot(loop, dp, bot)
 
 
 if __name__ == "__main__":
