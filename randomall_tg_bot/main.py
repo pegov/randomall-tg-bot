@@ -81,6 +81,7 @@ def start_service(loop: AbstractEventLoop):
     aiogram_router.message(router.help, Command(commands=["start", "help"]))
     dp.include_router(aiogram_router)
     dp.startup.register(on_startup)
+    dp.shutdown.register(on_shutdown)
 
     app = Application()
     app["bot"] = bot
