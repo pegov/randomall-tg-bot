@@ -9,8 +9,9 @@ from randomall_tg_bot.config import (
     DEBUG,
     MQ_URL,
     TELEGRAM_API_TOKEN,
-    TELEGRAM_WEBHOOK_HOST,
-    TELEGRAM_WEBHOOK_PORT,
+    TELEGRAM_WEBAPP_HOST,
+    TELEGRAM_WEBAPP_PORT,
+    TELEGRAM_WEBHOOK_PATH,
     TELEGRAM_WEBHOOK_URL,
 )
 from randomall_tg_bot.messages import COMMAND_CUSTOM, COMMAND_GENERAL, Response
@@ -46,12 +47,12 @@ def start_bot(
         start_webhook(
             dp,
             loop=loop,
-            webhook_path=TELEGRAM_WEBHOOK_URL,
+            webhook_path=TELEGRAM_WEBHOOK_PATH,
             on_startup=on_startup,
             on_shutdown=on_shutdown,
             skip_updates=True,
-            host=TELEGRAM_WEBHOOK_HOST,
-            port=TELEGRAM_WEBHOOK_PORT,
+            host=TELEGRAM_WEBAPP_HOST,
+            port=TELEGRAM_WEBAPP_PORT,
         )
 
 
