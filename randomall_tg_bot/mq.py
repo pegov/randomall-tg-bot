@@ -1,4 +1,3 @@
-import logging
 from asyncio import AbstractEventLoop, Future
 
 import orjson
@@ -44,7 +43,6 @@ class MQ:
         async with self.response_queue.iterator() as queue_iter:
             async for message in queue_iter:
                 async with message.process():
-                    logging.debug(f"Response queue: received {message}")
                     data = orjson.loads(message.body)
                     uuid = data.get("uuid")
 
@@ -54,8 +52,6 @@ class MQ:
                         result_future.set_result(response)
                     except KeyError:
                         continue
-
-                    logging.debug(self.uuids_map)
 
     async def close(self) -> None:
         await self.connection.close()
@@ -90,8 +86,8 @@ async def create_mq(
     connection = await connect_robust(amqp_url, loop=loop)
 
     # Creating channels
-    channel_a = await connection.channel(3)
-    channel_b = await connection.channel(4)
+    channel_a = await connection.channel()
+    channel_b = await connection.channel()
 
     # Creating exchange
     request_exchange = await channel_a.declare_exchange("telegram_request_exchange")

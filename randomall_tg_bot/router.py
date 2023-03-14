@@ -1,7 +1,9 @@
 import asyncio
 from uuid import uuid4
 
-from aiogram import Bot, types
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import ContextTypes
+from telegram.constants import ParseMode
 
 from randomall_tg_bot.messages import (
     COMMAND_CUSTOM,
@@ -95,55 +97,54 @@ def escape_text(text: str) -> str:
     return text
 
 
-def get_general_markup() -> types.InlineKeyboardMarkup:
-    return types.InlineKeyboardMarkup(
-        1,
+def get_general_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup.from_column(
         [
-            [
-                types.InlineKeyboardButton(
-                    name, callback_data=f"general:{ACTION_FIRST}:{target}"
-                ),
-            ]
+            InlineKeyboardButton(name, callback_data=f"general:{ACTION_FIRST}:{target}")
             for name, target in GENERAL
-        ],
+        ]
     )
 
 
-def get_repeat_markup(command: str, target: str) -> types.InlineKeyboardMarkup:
-    return types.InlineKeyboardMarkup(
-        1,
+def get_repeat_markup(command: str, target: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup.from_column(
         [
-            [
-                types.InlineKeyboardButton(
-                    "Ещё", callback_data=f"{command}:{ACTION_REPEAT}:{target}"
-                )
-            ]
+            InlineKeyboardButton(
+                "Ещё", callback_data=f"{command}:{ACTION_REPEAT}:{target}"
+            )
         ],
     )
 
 
 class Router:
-    def __init__(self, bot: Bot, mq: MQ, uuids_map: dict[str, asyncio.Future]):
-        self.bot = bot
+    def __init__(self, mq: MQ, uuids_map: dict[str, asyncio.Future]):
         self.mq = mq
         self.uuids_map = uuids_map
 
-    async def help(self, message: types.Message) -> None:
-        await message.answer(HELP_MESSAGE)
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.MARKDOWN_V2)  # type: ignore
 
-    async def general(self, message: types.Message) -> None:
-        await message.answer("Выберите:", reply_markup=get_general_markup())
+    async def general(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        await update.message.reply_text("Выберите:", reply_markup=get_general_markup())  # type: ignore
 
-    async def custom(self, message: types.Message) -> None:
-        args = message.get_args()
-        if args is None or args.strip() == "":
-            await message.answer(CUSTOM_MESSAGE)
+    async def custom(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if context.args is None or len(context.args) == 0:
+            await update.message.reply_text(  # type: ignore
+                CUSTOM_MESSAGE, parse_mode=ParseMode.MARKDOWN_V2
+            )
+            return
+
+        arg = context.args[0]
+        if arg.strip() == "":
+            await update.message.reply_text(  # type: ignore
+                CUSTOM_MESSAGE, parse_mode=ParseMode.MARKDOWN_V2
+            )
             return
 
         try:
-            id = int(args)
+            id = int(arg)
         except ValueError:
-            await message.answer(ID_MUST_BE_A_NUMBER_MESSAGE)
+            await update.message.reply_text(ID_MUST_BE_A_NUMBER_MESSAGE)  # type: ignore
             return
 
         uuid, response_future = self._create_response_future()
@@ -155,35 +156,35 @@ class Router:
             if response.status == RESPONSE_STATUS_OK:
                 assert response.payload is not None
                 payload = GenerateResponsePayload(response.payload)
-                await message.answer(
+                await update.message.reply_text(  # type: ignore
                     escape_text(payload.result),
                     reply_markup=get_repeat_markup(COMMAND_CUSTOM, str(id)),
+                    parse_mode=ParseMode.MARKDOWN_V2,
                 )
             elif response.status == RESPONSE_STATUS_FORBIDDEN:
-                await message.answer(FORBIDDEN_MESSAGE)
+                await update.message.reply_text(FORBIDDEN_MESSAGE)  # type: ignore
             elif response.status == RESPONSE_STATUS_NOT_FOUND:
-                await message.answer(GENERATOR_NOT_FOUND_MESSAGE)
+                await update.message.reply_text(GENERATOR_NOT_FOUND_MESSAGE)  # type: ignore
             else:
-                await message.answer(SERVER_ERROR_MESSAGE)
+                await update.message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
         except asyncio.exceptions.TimeoutError:
-            await message.answer(SERVER_ERROR_MESSAGE)
+            await update.message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
         finally:
             self._delete_response_future(uuid)
 
-    async def callback(self, cq: types.CallbackQuery) -> None:
-        cq_object = cq.to_python()
-        chat_id = cq_object.get("message").get("chat").get("id")  # type: ignore
-        message_id = cq_object.get("message").get("message_id")  # type: ignore
-        cq_data = cq_object.get("data")
+    async def callback(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        query = update.callback_query
+        await query.answer()  # type: ignore
 
-        if cq_data is None:
-            return
-
-        is_general = cq_data.startswith(COMMAND_GENERAL)
-        is_custom = cq_data.startswith(COMMAND_CUSTOM)
+        is_general = query.data.startswith(COMMAND_GENERAL)  # type: ignore
+        is_custom = query.data.startswith(COMMAND_CUSTOM)  # type: ignore
 
         if is_general:
-            _, action, name = cq_data.split(":", 2)
+            _, action, name = query.data.split(":", 2)  # type: ignore
 
             uuid, response_future = self._create_response_future()
 
@@ -201,39 +202,36 @@ class Router:
                         text = escape_text(payload.result)
 
                     if action == ACTION_REPEAT:
-                        await self.bot.edit_message_reply_markup(
-                            chat_id,
-                            message_id=message_id,
-                            reply_markup=None,
-                        )
-                        await self.bot.send_message(
-                            chat_id,
+                        await update.effective_message.edit_reply_markup()  # type: ignore
+                        await update.effective_message.reply_text(  # type: ignore
                             text,
                             reply_markup=get_repeat_markup(COMMAND_GENERAL, name),
+                            parse_mode=ParseMode.MARKDOWN_V2,
                         )
                     else:
-                        await self.bot.edit_message_text(
+                        await update.effective_message.edit_text(  # type: ignore
                             text,
-                            chat_id,
-                            message_id,
                             reply_markup=get_repeat_markup(COMMAND_GENERAL, name),
+                            parse_mode=ParseMode.MARKDOWN_V2,
                         )
                 elif response.status == RESPONSE_STATUS_NOT_FOUND:
-                    await self.bot.send_message(chat_id, GENERATOR_NOT_FOUND_MESSAGE)
+                    await update.effective_message.reply_text(  # type: ignore
+                        GENERATOR_NOT_FOUND_MESSAGE
+                    )
                 else:
-                    await self.bot.send_message(chat_id, SERVER_ERROR_MESSAGE)
+                    await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
             except asyncio.exceptions.TimeoutError:
-                await self.bot.send_message(chat_id, SERVER_ERROR_MESSAGE)
+                await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
             finally:
                 self._delete_response_future(uuid)
 
         elif is_custom:
-            _, action, id = cq_data.split(":", 2)
+            _, action, id = query.data.split(":", 2)  # type: ignore
 
             try:
                 id = int(id)
             except ValueError:
-                await self.bot.send_message(chat_id, ID_MUST_BE_A_NUMBER_MESSAGE)
+                await update.effective_message.reply_text(ID_MUST_BE_A_NUMBER_MESSAGE)  # type: ignore
                 return
 
             uuid, response_future = self._create_response_future()
@@ -247,31 +245,28 @@ class Router:
                     payload = GenerateResponsePayload(response.payload)
                     text = escape_text(payload.result)
                     if action == ACTION_REPEAT:
-                        await self.bot.edit_message_reply_markup(
-                            chat_id,
-                            message_id=message_id,
-                            reply_markup=None,
-                        )
-                        await self.bot.send_message(
-                            chat_id,
+                        await update.effective_message.edit_reply_markup()  # type: ignore
+                        await update.effective_message.reply_text(  # type: ignore
                             text,
                             reply_markup=get_repeat_markup(COMMAND_CUSTOM, str(id)),
+                            parse_mode=ParseMode.MARKDOWN_V2,
                         )
                     else:
-                        await self.bot.edit_message_text(
+                        await update.effective_message.reply_text(  # type: ignore
                             text,
-                            chat_id,
-                            message_id,
                             reply_markup=get_repeat_markup(COMMAND_CUSTOM, str(id)),
+                            parse_mode=ParseMode.MARKDOWN_V2,
                         )
                 elif response.status == RESPONSE_STATUS_FORBIDDEN:
-                    await self.bot.send_message(chat_id, FORBIDDEN_MESSAGE)
+                    await update.effective_message.reply_text(FORBIDDEN_MESSAGE)  # type: ignore
                 elif response.status == RESPONSE_STATUS_NOT_FOUND:
-                    await self.bot.send_message(chat_id, GENERATOR_NOT_FOUND_MESSAGE)
+                    await update.effective_message.reply_text(  # type: ignore
+                        GENERATOR_NOT_FOUND_MESSAGE
+                    )
                 else:
-                    await self.bot.send_message(chat_id, SERVER_ERROR_MESSAGE)
+                    await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
             except asyncio.exceptions.TimeoutError:
-                await self.bot.send_message(chat_id, SERVER_ERROR_MESSAGE)
+                await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
             finally:
                 self._delete_response_future(uuid)
 

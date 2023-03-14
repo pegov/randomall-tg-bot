@@ -9,9 +9,9 @@ packages = [{include = "randomall_tg_bot"}]
 [tool.poetry.dependencies]
 python = "^3.10"
 aio-pika = "^9.0.4"
-aiogram = "^2.25.1"
 python-dotenv = "^1.0.0"
 orjson = "^3.8.7"
+python-telegram-bot = "^20.1"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -1,59 +1,12 @@
 import logging
 from asyncio import AbstractEventLoop, Future, get_event_loop
 
-from aiogram import Bot, Dispatcher
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
-from aiogram.utils.executor import start_polling, start_webhook
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
-from randomall_tg_bot.config import (
-    DEBUG,
-    MQ_URL,
-    TELEGRAM_API_TOKEN,
-    TELEGRAM_WEBAPP_HOST,
-    TELEGRAM_WEBAPP_PORT,
-    TELEGRAM_WEBHOOK_PATH,
-    TELEGRAM_WEBHOOK_URL,
-)
+from randomall_tg_bot.config import DEBUG, MQ_URL, TELEGRAM_API_TOKEN
 from randomall_tg_bot.messages import COMMAND_CUSTOM, COMMAND_GENERAL, Response
 from randomall_tg_bot.mq import create_mq
 from randomall_tg_bot.router import Router
-
-
-async def on_startup(dp: Dispatcher) -> None:
-    logging.debug("Startup")
-    if not DEBUG:
-        await dp.bot.set_webhook(TELEGRAM_WEBHOOK_URL)
-
-
-async def on_shutdown(dp: Dispatcher) -> None:
-    logging.debug("Shutdown")
-    if not DEBUG:
-        await dp.bot.delete_webhook()
-
-
-def start_bot(
-    loop: AbstractEventLoop,
-    dp: Dispatcher,
-) -> None:
-    if DEBUG:
-        start_polling(
-            dp,
-            loop=loop,
-            on_startup=on_startup,
-            on_shutdown=on_shutdown,
-            skip_updates=True,
-        )
-    else:
-        start_webhook(
-            dp,
-            loop=loop,
-            webhook_path=TELEGRAM_WEBHOOK_PATH,
-            on_startup=on_startup,
-            on_shutdown=on_shutdown,
-            skip_updates=True,
-            host=TELEGRAM_WEBAPP_HOST,
-            port=TELEGRAM_WEBAPP_PORT,
-        )
 
 
 def start_service(loop: AbstractEventLoop):
@@ -61,25 +14,29 @@ def start_service(loop: AbstractEventLoop):
     logging.basicConfig(level=level)
     uuids_map: dict[str, Future[Response]] = {}
     mq = loop.run_until_complete(create_mq(loop, MQ_URL, uuids_map))
-    bot = Bot(TELEGRAM_API_TOKEN, parse_mode="MarkdownV2")
-    dp = Dispatcher(bot)
-    if DEBUG:
-        dp.middleware.setup(LoggingMiddleware())
 
-    router = Router(bot, mq, uuids_map)
-    dp.register_message_handler(router.help, commands=["start", "help"])
-    dp.register_message_handler(
-        dp.async_task(router.general), commands=[COMMAND_GENERAL, "g"]
-    )
-    dp.register_message_handler(
-        dp.async_task(router.custom), commands=[COMMAND_CUSTOM, "c"]
-    )
-    dp.register_callback_query_handler(dp.async_task(router.callback))
+    router = Router(mq, uuids_map)
 
     # TODO: handle reconnect
-    loop.create_task(mq.recv())
+    mq_recv_task = loop.create_task(mq.recv())
 
-    start_bot(loop, dp)
+    async def on_shutdown(_: Application) -> None:
+        mq_recv_task.cancel()
+        await mq.close()
+
+    app = (
+        Application.builder()
+        .token(TELEGRAM_API_TOKEN)
+        .post_shutdown(on_shutdown)
+        .build()
+    )
+
+    app.add_handler(CommandHandler(["start", "help"], router.help))
+    app.add_handler(CommandHandler([COMMAND_GENERAL, "g"], router.general))
+    app.add_handler(CommandHandler([COMMAND_CUSTOM, "c"], router.custom))
+    app.add_handler(CallbackQueryHandler(router.callback))
+
+    app.run_polling()
 
 
 if __name__ == "__main__":
