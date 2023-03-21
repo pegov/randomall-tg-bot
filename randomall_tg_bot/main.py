@@ -4,7 +4,7 @@ from asyncio import AbstractEventLoop, Future, get_event_loop
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from randomall_tg_bot.config import DEBUG, MQ_URL, TELEGRAM_API_TOKEN
-from randomall_tg_bot.messages import COMMAND_CUSTOM, COMMAND_GENERAL, Response
+from randomall_tg_bot.messages import Response
 from randomall_tg_bot.mq import create_mq
 from randomall_tg_bot.router import Router
 
@@ -32,8 +32,8 @@ def start_service(loop: AbstractEventLoop):
     )
 
     app.add_handler(CommandHandler(["start", "help"], router.help))
-    app.add_handler(CommandHandler([COMMAND_GENERAL, "g"], router.general))
-    app.add_handler(CommandHandler([COMMAND_CUSTOM, "c"], router.custom))
+    app.add_handler(CommandHandler(["general", "g"], router.general))
+    app.add_handler(CommandHandler(["custom", "c"], router.custom))
     app.add_handler(CallbackQueryHandler(router.callback))
 
     app.run_polling()

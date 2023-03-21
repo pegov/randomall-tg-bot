@@ -1,16 +1,25 @@
 import asyncio
+from typing import List
 from uuid import uuid4
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
+from telegram.ext import ContextTypes
 
 from randomall_tg_bot.messages import (
-    COMMAND_CUSTOM,
-    COMMAND_GENERAL,
+    BUTTONS_MODE_DEFAULT,
+    BUTTONS_MODE_RENAME,
+    COMMAND_CUSTOM_INFO,
+    COMMAND_CUSTOM_RESULT_MULTI,
+    COMMAND_CUSTOM_RESULT_SINGLE,
+    COMMAND_GENERAL_RESULT,
     RESPONSE_STATUS_FORBIDDEN,
     RESPONSE_STATUS_NOT_FOUND,
     RESPONSE_STATUS_OK,
+    ButtonsCustom,
+    ButtonsCustomItem,
+    ButtonsRename,
+    CustomInfoResponsePayload,
     GenerateResponsePayload,
     Response,
 )
@@ -70,6 +79,9 @@ GENERAL: list[tuple[str, str]] = [
 ACTION_FIRST = "first"
 ACTION_REPEAT = "repeat"
 
+MODE_SINGLE = "single"
+MODE_MULTI = "multi"
+
 
 def escape_text(text: str) -> str:
     """MarkdownV2 escape"""
@@ -97,22 +109,96 @@ def escape_text(text: str) -> str:
     return text
 
 
-def get_general_markup() -> InlineKeyboardMarkup:
+def get_general_first_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup.from_column(
         [
-            InlineKeyboardButton(name, callback_data=f"general:{ACTION_FIRST}:{target}")
+            InlineKeyboardButton(
+                name, callback_data=f"{COMMAND_GENERAL_RESULT}:{ACTION_FIRST}:{target}"
+            )
             for name, target in GENERAL
         ]
     )
 
 
-def get_repeat_markup(command: str, target: str) -> InlineKeyboardMarkup:
+def get_general_repeat_markup(target: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup.from_column(
         [
             InlineKeyboardButton(
-                "Ещё", callback_data=f"{command}:{ACTION_REPEAT}:{target}"
+                "Ещё",
+                callback_data=f"{COMMAND_GENERAL_RESULT}:{ACTION_REPEAT}:{target}",
             )
         ],
+    )
+
+
+def get_custom_single_button_first_markup(
+    button_name: str,
+    target: str,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup.from_column(
+        [
+            InlineKeyboardButton(
+                button_name,
+                callback_data=f"{COMMAND_CUSTOM_RESULT_SINGLE}:{MODE_SINGLE}:{ACTION_FIRST}:{target}",
+            )
+        ]
+    )
+
+
+def get_custom_single_button_repeat_markup(target: str):
+    return InlineKeyboardMarkup.from_column(
+        [
+            InlineKeyboardButton(
+                "Инфо", callback_data=f"{COMMAND_CUSTOM_INFO}:{target}"
+            ),
+            InlineKeyboardButton(
+                "Ещё",
+                callback_data=f"{COMMAND_CUSTOM_RESULT_SINGLE}:{MODE_SINGLE}:{ACTION_REPEAT}:{target}",
+            ),
+        ],
+    )
+
+
+def get_custom_multiple_buttons_first_markup(
+    items: List[ButtonsCustomItem],
+    target: str,
+) -> InlineKeyboardMarkup:
+    rows = []
+    row = []
+    current_row = 0
+    for i, item in enumerate(items):
+        if item.row == current_row:
+            row.append(
+                InlineKeyboardButton(
+                    item.title,
+                    callback_data=f"{COMMAND_CUSTOM_RESULT_MULTI}:{MODE_MULTI}:{ACTION_FIRST}:{target}:{i+1}",
+                )
+            )
+        else:
+            rows.append(row.copy())
+            current_row += 1
+            row.clear()
+
+    if len(row) > 0:
+        rows.append(row)
+
+    return InlineKeyboardMarkup(rows)
+
+
+def get_custom_multiple_buttons_repeat_markup(
+    target: str,
+    button_id: str,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup.from_column(
+        [
+            InlineKeyboardButton(
+                "Инфо", callback_data=f"{COMMAND_CUSTOM_INFO}:{target}"
+            ),
+            InlineKeyboardButton(
+                "Ещё",
+                callback_data=f"{COMMAND_CUSTOM_RESULT_MULTI}:{MODE_MULTI}:{ACTION_REPEAT}:{target}:{button_id}",
+            ),
+        ]
     )
 
 
@@ -125,7 +211,7 @@ class Router:
         await update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.MARKDOWN_V2)  # type: ignore
 
     async def general(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        await update.message.reply_text("Выберите:", reply_markup=get_general_markup())  # type: ignore
+        await update.message.reply_text("Выберите:", reply_markup=get_general_first_markup())  # type: ignore
 
     async def custom(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if context.args is None or len(context.args) == 0:
@@ -149,16 +235,35 @@ class Router:
 
         uuid, response_future = self._create_response_future()
 
-        await self.mq.custom_request(uuid, id)
+        await self.mq.custom_info(uuid, id)
 
         try:
             response = await asyncio.wait_for(response_future, timeout=TIMEOUT)
             if response.status == RESPONSE_STATUS_OK:
                 assert response.payload is not None
-                payload = GenerateResponsePayload(response.payload)
+                payload = CustomInfoResponsePayload(response.payload)
+                buttons = payload.format.get("buttons")  # type: ignore
+                buttons_mode = buttons.get("mode")  # type: ignore
+
+                if buttons_mode == BUTTONS_MODE_DEFAULT:
+                    markup = get_custom_single_button_first_markup(
+                        "Сгенерировать", str(id)
+                    )
+                elif buttons_mode == BUTTONS_MODE_RENAME:
+                    markup = get_custom_single_button_first_markup(
+                        ButtonsRename(buttons).title,  # type: ignore
+                        str(id),
+                    )
+                else:  # custom
+                    markup = get_custom_multiple_buttons_first_markup(
+                        ButtonsCustom(buttons).items,  # type: ignore
+                        str(id),
+                    )
+
+                text = f"*{escape_text(payload.title)}*\n{escape_text(payload.description)}"
                 await update.message.reply_text(  # type: ignore
-                    escape_text(payload.result),
-                    reply_markup=get_repeat_markup(COMMAND_CUSTOM, str(id)),
+                    text,
+                    reply_markup=markup,
                     parse_mode=ParseMode.MARKDOWN_V2,
                 )
             elif response.status == RESPONSE_STATUS_FORBIDDEN:
@@ -180,15 +285,16 @@ class Router:
         query = update.callback_query
         await query.answer()  # type: ignore
 
-        is_general = query.data.startswith(COMMAND_GENERAL)  # type: ignore
-        is_custom = query.data.startswith(COMMAND_CUSTOM)  # type: ignore
+        is_general_result = query.data.startswith("general_result")  # type: ignore
+        is_custom_info = query.data.startswith("custom_info")  # type: ignore
+        is_custom_result = query.data.startswith("custom_result")  # type: ignore
 
-        if is_general:
+        if is_general_result:
             _, action, name = query.data.split(":", 2)  # type: ignore
 
             uuid, response_future = self._create_response_future()
 
-            await self.mq.general_request(uuid, name)
+            await self.mq.general_result(uuid, name)
 
             try:
                 response = await asyncio.wait_for(response_future, timeout=TIMEOUT)
@@ -205,13 +311,13 @@ class Router:
                         await update.effective_message.edit_reply_markup()  # type: ignore
                         await update.effective_message.reply_text(  # type: ignore
                             text,
-                            reply_markup=get_repeat_markup(COMMAND_GENERAL, name),
+                            reply_markup=get_general_repeat_markup(name),
                             parse_mode=ParseMode.MARKDOWN_V2,
                         )
                     else:
                         await update.effective_message.edit_text(  # type: ignore
                             text,
-                            reply_markup=get_repeat_markup(COMMAND_GENERAL, name),
+                            reply_markup=get_general_repeat_markup(name),
                             parse_mode=ParseMode.MARKDOWN_V2,
                         )
                 elif response.status == RESPONSE_STATUS_NOT_FOUND:
@@ -225,8 +331,8 @@ class Router:
             finally:
                 self._delete_response_future(uuid)
 
-        elif is_custom:
-            _, action, id = query.data.split(":", 2)  # type: ignore
+        elif is_custom_info:
+            _, id = query.data.split(":", 1)  # type: ignore
 
             try:
                 id = int(id)
@@ -236,25 +342,97 @@ class Router:
 
             uuid, response_future = self._create_response_future()
 
-            await self.mq.custom_request(uuid, id)
+            await self.mq.custom_info(uuid, id)
+
+            try:
+                response = await asyncio.wait_for(response_future, timeout=TIMEOUT)
+                if response.status == RESPONSE_STATUS_OK:
+                    assert response.payload is not None
+                    payload = CustomInfoResponsePayload(response.payload)
+                    text = f"*{payload.title}*\n{escape_text(payload.description)}"
+                    buttons = payload.format.get("buttons")  # type: ignore
+                    buttons_mode = buttons.get("mode")  # type: ignore
+                    if buttons_mode == BUTTONS_MODE_DEFAULT:
+                        markup = get_custom_single_button_first_markup(
+                            "Сгенерировать", str(id)
+                        )
+                    elif buttons_mode == BUTTONS_MODE_RENAME:
+                        markup = get_custom_single_button_first_markup(
+                            ButtonsRename(buttons).title,  # type: ignore
+                            str(id),
+                        )
+                    else:  # custom
+                        markup = get_custom_multiple_buttons_first_markup(
+                            ButtonsCustom(buttons).items,  # type: ignore
+                            str(id),
+                        )
+                    await update.effective_message.edit_reply_markup()  # type: ignore
+                    await update.effective_message.reply_text(  # type: ignore
+                        text,
+                        reply_markup=markup,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                    )
+                elif response.status == RESPONSE_STATUS_FORBIDDEN:
+                    await update.effective_message.reply_text(FORBIDDEN_MESSAGE)  # type: ignore
+                elif response.status == RESPONSE_STATUS_NOT_FOUND:
+                    await update.effective_message.reply_text(  # type: ignore
+                        GENERATOR_NOT_FOUND_MESSAGE
+                    )
+                else:
+                    await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
+            except asyncio.exceptions.TimeoutError:
+                await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
+            finally:
+                self._delete_response_future(uuid)
+
+        elif is_custom_result:
+            _, mode, action, rest = query.data.split(":", 3)  # type: ignore
+
+            if mode == MODE_SINGLE:
+                id = rest
+                button_id = None
+            else:
+                id, button_id = rest.split(":", 1)
+                button_id = int(button_id)
+
+            try:
+                id = int(id)
+            except ValueError:
+                await update.effective_message.reply_text(ID_MUST_BE_A_NUMBER_MESSAGE)  # type: ignore
+                return
+
+            uuid, response_future = self._create_response_future()
+
+            if mode == MODE_SINGLE:
+                await self.mq.custom_result(uuid, id)
+            else:
+                assert button_id is not None
+                await self.mq.custom_result_with_button_id(uuid, id, button_id)
 
             try:
                 response = await asyncio.wait_for(response_future, timeout=TIMEOUT)
                 if response.status == RESPONSE_STATUS_OK:
                     assert response.payload is not None
                     payload = GenerateResponsePayload(response.payload)
+                    if mode == MODE_SINGLE:
+                        markup = get_custom_single_button_repeat_markup(str(id))
+                    else:  # multi
+                        assert button_id is not None
+                        markup = get_custom_multiple_buttons_repeat_markup(
+                            str(id), str(button_id)
+                        )
                     text = escape_text(payload.result)
                     if action == ACTION_REPEAT:
                         await update.effective_message.edit_reply_markup()  # type: ignore
                         await update.effective_message.reply_text(  # type: ignore
                             text,
-                            reply_markup=get_repeat_markup(COMMAND_CUSTOM, str(id)),
+                            reply_markup=markup,
                             parse_mode=ParseMode.MARKDOWN_V2,
                         )
                     else:
-                        await update.effective_message.reply_text(  # type: ignore
+                        await update.effective_message.edit_text(  # type: ignore
                             text,
-                            reply_markup=get_repeat_markup(COMMAND_CUSTOM, str(id)),
+                            reply_markup=markup,
                             parse_mode=ParseMode.MARKDOWN_V2,
                         )
                 elif response.status == RESPONSE_STATUS_FORBIDDEN:

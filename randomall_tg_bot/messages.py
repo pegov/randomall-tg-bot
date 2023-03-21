@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 RESPONSE_STATUS_OK = "Ok"
 RESPONSE_STATUS_FORBIDDEN = "Forbidden"
@@ -6,8 +6,14 @@ RESPONSE_STATUS_NOT_FOUND = "NotFound"
 RESPONSE_STATUS_INTERNAL_ERROR = "InternalError"
 RESPONSE_STATUS_NOT_IMPLEMENTED = "NotImplemented"
 
-COMMAND_GENERAL = "general"
-COMMAND_CUSTOM = "custom"
+COMMAND_GENERAL_RESULT = "general_result"
+COMMAND_CUSTOM_INFO = "custom_info"
+COMMAND_CUSTOM_RESULT_SINGLE = "custom_result_single"
+COMMAND_CUSTOM_RESULT_MULTI = "custom_result_multi"
+
+BUTTONS_MODE_DEFAULT = "default"
+BUTTONS_MODE_RENAME = "rename"
+BUTTONS_MODE_CUSTOM = "custom"
 
 
 class Request:
@@ -48,11 +54,62 @@ class CustomRequestPayload:
         return {"id": self.id}
 
 
+class CustomWithButtonIdRequestPayload:
+    id: int
+    button_id: int
+
+    def __init__(self, id: int, button_id: int):
+        self.id = id
+        self.button_id = button_id
+
+    def to_dict(self) -> dict:
+        return {"id": self.id, "button_id": self.button_id}
+
+
+class ButtonsRename:
+    title: str
+
+    def __init__(self, data: dict) -> None:
+        self.title = data.get("title")  # type: ignore
+
+
+class ButtonsCustomItem:
+    title: str
+    row: int
+
+    def __init__(self, data: dict) -> None:
+        self.title = data.get("title")  # type: ignore
+        self.row = data.get("row")  # type: ignore
+
+
+class ButtonsCustom:
+    items: List[ButtonsCustomItem]
+
+    def __init__(self, data: dict) -> None:
+        self.items = [
+            ButtonsCustomItem(item_data) for item_data in data.get("items")  # type: ignore
+        ]
+
+
 class GenerateResponsePayload:
     result: str
 
     def __init__(self, data: dict):
         self.result = data.get("msg")  # type: ignore
+
+
+class CustomInfoResponsePayload:
+    id: int
+    title: str
+    description: str
+
+    format: dict
+
+    def __init__(self, data: dict) -> None:
+        self.id = data.get("id")  # type: ignore
+        self.title = data.get("title")  # type: ignore
+        self.description = data.get("description")  # type: ignore
+        self.format = data.get("format")  # type: ignore
 
 
 class Response:

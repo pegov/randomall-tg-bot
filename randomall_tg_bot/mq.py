@@ -5,9 +5,12 @@ from aio_pika import Message, connect_robust
 from aio_pika.abc import AbstractExchange, AbstractQueue, AbstractRobustConnection
 
 from randomall_tg_bot.messages import (
-    COMMAND_CUSTOM,
-    COMMAND_GENERAL,
+    COMMAND_CUSTOM_INFO,
+    COMMAND_CUSTOM_RESULT_MULTI,
+    COMMAND_CUSTOM_RESULT_SINGLE,
+    COMMAND_GENERAL_RESULT,
     CustomRequestPayload,
+    CustomWithButtonIdRequestPayload,
     GeneralRequestPayload,
     Request,
     Response,
@@ -56,17 +59,32 @@ class MQ:
     async def close(self) -> None:
         await self.connection.close()
 
-    async def general_request(self, uuid: str, name: str) -> None:
+    async def general_result(self, uuid: str, name: str) -> None:
         payload = GeneralRequestPayload(name)
-        request = Request(uuid, COMMAND_GENERAL, payload.to_dict())
-        await self._generate_request(request)
+        request = Request(uuid, COMMAND_GENERAL_RESULT, payload.to_dict())
+        await self._make_request(request)
 
-    async def custom_request(self, uuid: str, id: int) -> None:
+    async def custom_info(self, uuid: str, id: int) -> None:
         payload = CustomRequestPayload(id)
-        request = Request(uuid, COMMAND_CUSTOM, payload.to_dict())
-        await self._generate_request(request)
+        request = Request(uuid, COMMAND_CUSTOM_INFO, payload.to_dict())
+        await self._make_request(request)
 
-    async def _generate_request(self, request: Request) -> None:
+    async def custom_result(self, uuid: str, id: int) -> None:
+        payload = CustomRequestPayload(id)
+        request = Request(uuid, COMMAND_CUSTOM_RESULT_SINGLE, payload.to_dict())
+        await self._make_request(request)
+
+    async def custom_result_with_button_id(
+        self,
+        uuid: str,
+        id: int,
+        button_id: int,
+    ) -> None:
+        payload = CustomWithButtonIdRequestPayload(id, button_id)
+        request = Request(uuid, COMMAND_CUSTOM_RESULT_MULTI, payload.to_dict())
+        await self._make_request(request)
+
+    async def _make_request(self, request: Request) -> None:
         message = Message(
             orjson.dumps(request.to_dict()),
             content_type="text/plain",
