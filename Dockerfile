@@ -13,6 +13,7 @@ RUN pip install -r requirements.txt
 
 ENV PYTHONPATH=./
 
-COPY . .
+COPY randomall_tg_bot ./randomall_tg_bot
+COPY .env .
 
 CMD [ "python", "randomall_tg_bot/main.py"]
