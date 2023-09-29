@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from randomall_tg_bot.logger import Action, Event, log_event
 from randomall_tg_bot.messages import (
     BUTTONS_MODE_DEFAULT,
     BUTTONS_MODE_RENAME,
@@ -211,8 +212,14 @@ class Router:
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(HELP_MESSAGE, parse_mode=ParseMode.MARKDOWN_V2)  # type: ignore
 
+        user_id = update.effective_user.id if update.effective_user is not None else 0
+        log_event(Event(Action.HELP, user_id))
+
     async def general(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("Выберите:", reply_markup=get_general_first_markup())  # type: ignore
+
+        user_id = update.effective_user.id if update.effective_user is not None else 0
+        log_event(Event(Action.GENERAL_INFO, user_id))
 
     async def custom(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if context.args is None or len(context.args) == 0:
@@ -267,6 +274,12 @@ class Router:
                     reply_markup=markup,
                     parse_mode=ParseMode.MARKDOWN_V2,
                 )
+
+                user_id = (
+                    update.effective_user.id if update.effective_user is not None else 0
+                )
+                log_event(Event(Action.CUSTOM_INFO, user_id, {"id": id}))
+
             elif response.status == RESPONSE_STATUS_FORBIDDEN:
                 await update.message.reply_text(FORBIDDEN_MESSAGE)  # type: ignore
             elif response.status == RESPONSE_STATUS_NOT_FOUND:
@@ -321,12 +334,21 @@ class Router:
                             reply_markup=get_general_repeat_markup(name),
                             parse_mode=ParseMode.MARKDOWN_V2,
                         )
+
+                    user_id = (
+                        update.effective_user.id
+                        if update.effective_user is not None
+                        else 0
+                    )
+                    log_event(Event(Action.GENERAL_RESULT, user_id, {"name": name}))
+
                 elif response.status == RESPONSE_STATUS_NOT_FOUND:
                     await update.effective_message.reply_text(  # type: ignore
                         GENERATOR_NOT_FOUND_MESSAGE
                     )
                 else:
                     await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
+
             except asyncio.exceptions.TimeoutError:
                 await update.effective_message.reply_text(SERVER_ERROR_MESSAGE)  # type: ignore
             finally:
@@ -373,6 +395,14 @@ class Router:
                         reply_markup=markup,
                         parse_mode=ParseMode.MARKDOWN_V2,
                     )
+
+                    user_id = (
+                        update.effective_user.id
+                        if update.effective_user is not None
+                        else 0
+                    )
+                    log_event(Event(Action.CUSTOM_INFO, user_id, {"id": id}))
+
                 elif response.status == RESPONSE_STATUS_FORBIDDEN:
                     await update.effective_message.reply_text(FORBIDDEN_MESSAGE)  # type: ignore
                 elif response.status == RESPONSE_STATUS_NOT_FOUND:
@@ -436,6 +466,14 @@ class Router:
                             reply_markup=markup,
                             parse_mode=ParseMode.MARKDOWN_V2,
                         )
+
+                    user_id = (
+                        update.effective_user.id
+                        if update.effective_user is not None
+                        else 0
+                    )
+                    log_event(Event(Action.CUSTOM_RESULT, user_id, {"id": id}))
+
                 elif response.status == RESPONSE_STATUS_FORBIDDEN:
                     await update.effective_message.reply_text(FORBIDDEN_MESSAGE)  # type: ignore
                 elif response.status == RESPONSE_STATUS_NOT_FOUND:
